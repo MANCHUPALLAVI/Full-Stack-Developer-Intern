@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>PDF Uploader</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 24px; max-width: 800px; margin: auto; }
+    .file-row { display:flex; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid #eee; }
+    button { padding:6px 10px; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>PDF Uploader</h1>
+  <form id="uploadForm">
+    <input id="fileInput" type="file" accept="application/pdf" />
+    <button type="submit">Upload</button>
+    <div id="msg" role="status"></div>
+  </form>
+
+  <h2>Uploaded files</h2>
+  <div id="list"></div>
+
+<script>
+const API_BASE = 'http://localhost:4000/api';
+
+function showMessage(text, isError=false){
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = isError ? 'error' : '';
+  setTimeout(()=>{ el.textContent=''; }, 4000);
+}
+
+async function loadList(){
+  const res = await fetch(API_BASE + '/documents');
+  const data = await res.json();
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  if (data.length === 0) { list.textContent = 'No files uploaded yet.'; return; }
+  data.forEach(d => {
+    const row = document.createElement('div');
+    row.className = 'file-row';
+    row.innerHTML = `<div style="flex:1;">
+      <strong>${d.filename}</strong><br/><small>${(d.filesize/1024).toFixed(1)} KB • ${new Date(d.created_at).toLocaleString()}</small>
+    </div>
+    <div>
+      <a href="http://localhost:4000/api/documents/${d.id}/download" download>Download</a>
+      <button data-id="${d.id}" class="del">Delete</button>
+    </div>`;
+    list.appendChild(row);
+  });
+  document.querySelectorAll('.del').forEach(btn=>{
+    btn.onclick = async (e)=>{
+      const id = btn.getAttribute('data-id');
+      if (!confirm('Delete this file?')) return;
+      const res = await fetch(API_BASE + '/documents/' + id, { method: 'DELETE' });
+      if (res.ok) { showMessage('Deleted'); loadList(); } else { showMessage('Delete failed', true); }
+    }
+  });
+}
+
+document.getElementById('uploadForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const input = document.getElementById('fileInput');
+  if (!input.files || input.files.length === 0) { showMessage('Choose a PDF file', true); return; }
+  const file = input.files[0];
+  if (file.type !== 'application/pdf') { showMessage('Only PDF allowed', true); return; }
+  if (file.size > 10 * 1024 * 1024) { showMessage('Max 10 MB', true); return; }
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(API_BASE + '/upload', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({error:'Upload failed'}));
+      showMessage(err.error || 'Upload failed', true);
+      return;
+    }
+    showMessage('Uploaded successfully');
+    input.value = '';
+    loadList();
+  } catch (err) {
+    showMessage('Upload error', true);
+  }
+});
+
+loadList();
+</script>
+</body>
+</html>
